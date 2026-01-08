@@ -1,5 +1,5 @@
 [project]
-name = "sliding-window"
+name = "hsp_finder"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-sliding-window = "sliding_window:main"
+hsp-finder = "hsp-finder:main"
 
 [build-system]
 requires = ["hatchling"]

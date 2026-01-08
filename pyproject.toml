@@ -1,0 +1,20 @@
+[project]
+name = "sliding-window"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Jonathan Wells", email = "jonwells90@gmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "biopython>=1.86",
+    "numba>=0.63.1",
+]
+
+[project.scripts]
+sliding-window = "sliding_window:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

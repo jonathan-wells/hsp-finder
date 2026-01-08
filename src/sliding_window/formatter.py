@@ -7,11 +7,12 @@ class Alignment:
         query: str | np.ndarray,
         subject: str | np.ndarray,
         score: int,
+        evalue: float,
         i: int,
         j: int,
         window: int,
-        qseqid: str | None = None,
-        sseqid: str | None = None,
+        qseqid: str,
+        sseqid: str
     ):
         if isinstance(query, np.ndarray):
             query = "".join([chr(c) for c in query])
@@ -19,72 +20,86 @@ class Alignment:
             subject = "".join([chr(c) for c in subject])
         self.query = query
         self.subject = subject
-        self.score = score
-        self.i = i
-        self.j = j
-        self.window = window
         self.m = len(query)
         self.n = len(subject)
-        self.qseqid = qseqid if qseqid else "query"
-        self.sseqid = sseqid if sseqid else "subject"
+        self.score = score
+        self.evalue = evalue
+        self.window = window
+
+        # Calculate the actual alignment boundaries (0-indexed)
+        qstart_0 = max(i - self.window + 1, 0)
+        qend_0 = min(i + 1, self.m)
+        sstart_0 = max(j - self.window + 1, 0)
+        send_0 = min(j + 1, self.n)
+
+        # Calculate actual lengths available in each sequence
+        qlen = qend_0 - qstart_0
+        slen = send_0 - sstart_0
+
+        # Use the minimum length to ensure alignments match
+        self.aln_length = min(qlen, slen)
+
+        # Adjust boundaries to match the alignment length (keeping the end positions)
+        qstart_0 = qend_0 - self.aln_length
+        sstart_0 = send_0 - self.aln_length
+
+        # Convert to 1-indexed for display
+        self.qstart = qstart_0 + 1
+        self.qend = qend_0
+        self.sstart = sstart_0 + 1
+        self.send = send_0
+
+        self.qseqid = qseqid
+        self.sseqid = sseqid
+        self.query_aln = self.query[qstart_0:qend_0]
+        self.subject_aln = self.subject[sstart_0:send_0]
+
+    @property
+    def identity(self) -> float:
+        """Calculate the percent identity for a given alignment."""
+        matches = sum(1 for q, s in zip(self.query_aln, self.subject_aln) if q == s)
+        identity = 100.0 * matches / self.aln_length
+        return identity
+
+    @property
+    def mismatches(self) -> float:
+        """Calculate the number of mismatches for a given alignment."""
+        return sum(1 for q, s in zip(self.query_aln, self.subject_aln) if q != s)
 
     def to_blast_tab(self) -> str:
         """Output alignment in BLAST outfmt 6 style (tab-delimited).
 
         Columns: qseqid sseqid pident length mismatch gapopen qstart qend sstart send score
         """
-        pident = 100.0 * self.score / self.window
-        length = self.window
-
-        # Calculate alignment coordinates (1-indexed)
-        qstart = max(self.i - self.window + 1, 0) + 1
-        qend = min(self.i, self.m) + 1
-        sstart = max(self.j - self.window + 1, 0) + 1
-        send = min(self.j, self.n) + 1
-
         return "\t".join(
             [
                 str(self.qseqid),
                 str(self.sseqid),
-                f"{pident:.2f}",
-                str(length),
-                str(qstart),
-                str(qend),
-                str(sstart),
-                str(send),
+                f"{self.identity:.2f}",
+                str(self.aln_length),
+                str(self.mismatches),
+                "0",  # gapopen is always 0 for this aligner
+                str(self.qstart),
+                str(self.qend),
+                str(self.sstart),
+                str(self.send),
+                f"{self.evalue:.2e}",
                 str(self.score),
             ]
         )
 
     def pretty_print(self) -> str:
-        start1, end1 = max(self.i - self.window, 0), min(self.i, self.m)
-        start2, end2 = max(self.j - self.window, 0), min(self.j, self.n)
-
-        lpad1, lpad2 = 0, 0
-        rpad1, rpad2 = 0, 0
-        if start1 == 0:
-            lpad1 = self.window - self.i
-        if start2 == 0:
-            lpad2 = self.window - self.j
-        if end1 == self.m:
-            rpad1 = self.i - self.m
-        if end2 == self.n:
-            rpad2 = self.j - self.n
-
-        sq1 = " " * lpad1 + self.query[start1:end1] + " " * rpad1
-        sq2 = " " * lpad2 + self.subject[start2:end2] + " " * rpad2
-        identity = 100.0 * self.score / self.window
         idmarkers = "".join(
             [
-                "|" if sq1[k] == sq2[k] and sq1[k] != " " else " "
-                for k in range(self.window)
+                "|" if self.query_aln[k] == self.subject_aln[k] else " "
+                for k in range(self.aln_length)
             ]
         )
 
         output = ""
-        output += f"{identity:.1f}%\n"
-        output += f"{start1:<4}{sq1} {end1}\n"
-        output += f"{'':<4}{idmarkers}\n"
-        output += f"{start2:<4}{sq2} {end2}\n"
+        output += f"{self.identity:.1f}%\n"
+        output += f"{self.qstart:<4} {self.query_aln} {self.qend}\n"
+        output += f"{'':<4} {idmarkers}\n"
+        output += f"{self.sstart:<4} {self.subject_aln} {self.send}\n"
 
         return output

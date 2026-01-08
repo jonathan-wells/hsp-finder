@@ -6,7 +6,7 @@ import numba
 from Bio import SeqIO
 from Bio.Align import substitution_matrices
 
-from sliding_window.formatter import Alignment
+from hsp_finder.formatter import Alignment
 
 
 class HSPFinder:

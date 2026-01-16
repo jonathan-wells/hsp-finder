@@ -1,3 +1,9 @@
+"""High-Scoring Pair (HSP) alignment module for sequence similarity search.
+
+This module implements a sliding window-based alignment algorithm for finding
+high-scoring local alignments between protein sequences, similar to BLAST.
+"""
+
 import sys
 
 import numpy as np
@@ -10,6 +16,12 @@ from hsp_finder.formatter import Alignment
 
 
 class HSPFinder:
+    """Finds high-scoring pairs (HSPs) between query and subject sequences.
+
+    Uses a sliding window approach with dynamic programming to identify
+    local alignments and calculates E-values for statistical significance.
+    """
+
     def __init__(
         self,
         window_size: int = 80,
@@ -18,6 +30,15 @@ class HSPFinder:
         total_qlen: int | None = None,
         total_slen: int | None = None,
     ):
+        """Initialize the HSPFinder with alignment parameters.
+
+        Args:
+            window_size: Length of the alignment window in amino acids.
+            minevalue: Maximum E-value threshold for reporting alignments.
+            scoring_system: Name of the substitution matrix (e.g., BLOSUM62).
+            total_qlen: Total length of all query sequences for E-value calculation.
+            total_slen: Total length of all subject sequences for E-value calculation.
+        """
         self.window: int = window_size
         self.minevalue = minevalue
         self.scoring_system = scoring_system
@@ -32,6 +53,17 @@ class HSPFinder:
         qseqid: str,
         sseqid: str
     ) -> Alignment | None:
+        """Align two sequences and return the best HSP if significant.
+
+        Args:
+            q_arr: Query sequence as a NumPy array of ASCII byte values.
+            s_arr: Subject sequence as a NumPy array of ASCII byte values.
+            qseqid: Query sequence identifier.
+            sseqid: Subject sequence identifier.
+
+        Returns:
+            An Alignment object if E-value is below threshold, None otherwise.
+        """
         scores = self.calc_scores_matrix(q_arr, s_arr)
         i, j = np.unravel_index(np.argmax(scores), scores.shape)
         evalue = self.calc_evalue(
@@ -41,11 +73,31 @@ class HSPFinder:
         )
         if evalue < self.minevalue:
             alignment = Alignment(
-                q_arr, s_arr, scores[i, j], evalue, i - 1, j - 1, self.window, qseqid, sseqid
+                q_arr,
+                s_arr,
+                scores[i, j],
+                evalue,
+                i - 1,
+                j - 1,
+                self.window,
+                qseqid,
+                sseqid
             )
             return alignment
 
     def calc_scores_matrix(self, q_arr: ArrayLike, s_arr: ArrayLike) -> ArrayLike:
+        """Calculate cumulative scoring matrix with sliding window adjustment.
+
+        Computes cumulative alignment scores and subtracts scores from positions
+        outside the sliding window to create a local alignment effect.
+
+        Args:
+            q_arr: Query sequence as a NumPy array of ASCII byte values.
+            s_arr: Subject sequence as a NumPy array of ASCII byte values.
+
+        Returns:
+            A 2D array of alignment scores for each position pair.
+        """
         m = q_arr.shape[0]
         n = s_arr.shape[0]
         scores = self._sum_diagonals(q_arr, s_arr, m, n, self.match_scores)
@@ -62,12 +114,37 @@ class HSPFinder:
         k: float = 0.134,
         lambda_: float = 0.318,
     ) -> float:
-        """Calculate the E-value for a given alignment score."""
+        """Calculate the E-value for a given alignment score.
+
+        Uses the Karlin-Altschul statistics formula to compute the expected
+        number of alignments with the given score occurring by chance.
+
+        Args:
+            score: Raw alignment score.
+            query_len: Length of the query sequence.
+            subject_len: Length of the subject sequence.
+            k: Karlin-Altschul K parameter.
+            lambda_: Karlin-Altschul lambda parameter.
+
+        Returns:
+            The E-value (expected number of chance alignments).
+        """
         evalue = k * query_len * subject_len * np.exp(-lambda_ * score)
         return evalue
 
     @staticmethod
     def load_match_scores(scoring_system: str) -> ArrayLike:
+        """Load a substitution matrix into a lookup table.
+
+        Creates a 256x256 array indexed by ASCII values for fast score lookups
+        during alignment.
+
+        Args:
+            scoring_system: Name of the substitution matrix (e.g., BLOSUM62).
+
+        Returns:
+            A 2D array of match scores indexed by ASCII byte values.
+        """
         matrix = substitution_matrices.load(scoring_system)
         match_scores = np.zeros((256, 256), dtype=np.int8)
         for i, aa1 in enumerate(matrix.alphabet):
@@ -78,6 +155,21 @@ class HSPFinder:
     @staticmethod
     @numba.njit(fastmath=True, cache=True)
     def _sum_diagonals(q_arr, s_arr, m, n, match_scores) -> ArrayLike:
+        """Compute cumulative diagonal alignment scores using dynamic programming.
+
+        JIT-compiled function that efficiently calculates cumulative scores
+        along all diagonals of the alignment matrix.
+
+        Args:
+            q_arr: Query sequence as a NumPy array of ASCII byte values.
+            s_arr: Subject sequence as a NumPy array of ASCII byte values.
+            m: Length of the query sequence.
+            n: Length of the subject sequence.
+            match_scores: 2D lookup table of match scores indexed by ASCII values.
+
+        Returns:
+            A (m+1) x (n+1) array of cumulative alignment scores.
+        """
         scores = np.zeros((m + 1, n + 1), dtype=np.int16)
         for i in range(1, m + 1):
             for j in range(1, n + 1):
@@ -92,7 +184,17 @@ def search_database(
     window_size: int = 80,
     evalue_threshold: float = 1e-2,
 ):
-    """Search a query sequence against a database of sequences in a FASTA file."""
+    """Search a query sequence against a database of sequences in a FASTA file.
+
+    Performs an all-vs-all comparison between query and subject sequences,
+    reporting alignments that meet identity and length criteria.
+
+    Args:
+        query_fasta: Path to the FASTA file containing query sequences.
+        database_fasta: Path to the FASTA file containing subject sequences.
+        window_size: Length of the alignment window in amino acids.
+        evalue_threshold: Maximum E-value for reporting alignments.
+    """
     query_records = list(SeqIO.parse(query_fasta, "fasta"))
     subject_records = list(SeqIO.parse(database_fasta, "fasta"))
 

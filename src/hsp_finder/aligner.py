@@ -180,9 +180,11 @@ class HSPFinder:
 
 def search_database(
     query_fasta: str,
-    database_fasta: str,
+    subject_fasta: str,
     window_size: int = 80,
     evalue_threshold: float = 1e-2,
+    identity_threshold: float = 40.0,
+    output_file: str | None = None,
 ):
     """Search a query sequence against a database of sequences in a FASTA file.
 
@@ -191,12 +193,14 @@ def search_database(
 
     Args:
         query_fasta: Path to the FASTA file containing query sequences.
-        database_fasta: Path to the FASTA file containing subject sequences.
+        subject_fasta: Path to the FASTA file containing subject sequences.
         window_size: Length of the alignment window in amino acids.
         evalue_threshold: Maximum E-value for reporting alignments.
+        identity_threshold: Minimum percent identity for reporting alignments.
+        output_file: Optional path to write results. If None, writes to stdout.
     """
     query_records = list(SeqIO.parse(query_fasta, "fasta"))
-    subject_records = list(SeqIO.parse(database_fasta, "fasta"))
+    subject_records = list(SeqIO.parse(subject_fasta, "fasta"))
 
     query_data = [
         (rec.id, np.array([ord(c) for c in str(rec.seq)], dtype=np.int8))
@@ -226,15 +230,21 @@ def search_database(
         total_slen=total_slen
     )
 
-    for qseqid, q_arr in query_data:
-        for sseqid, s_arr in subject_data:
-            aln = searcher.align(q_arr, s_arr, qseqid=qseqid, sseqid=sseqid)
-            if aln and aln.identity >= 40.0 and aln.aln_length == window_size:
-                print(aln.to_blast_tab())
-            c += 1
-            if c % 1000000 == 0 or c == nsearch:
-                prc = 100 * c / nsearch
-                sys.stderr.write(f"Completed {c}/{nsearch}. {prc:.2f}%\n")
+    output_handle = open(output_file, 'w') if output_file else sys.stdout
+
+    try:
+        for qseqid, q_arr in query_data:
+            for sseqid, s_arr in subject_data:
+                aln = searcher.align(q_arr, s_arr, qseqid=qseqid, sseqid=sseqid)
+                if aln and aln.identity >= identity_threshold and aln.aln_length == window_size:
+                    output_handle.write(aln.to_blast_tab() + '\n')
+                c += 1
+                if c % 1000000 == 0 or c == nsearch:
+                    prc = 100 * c / nsearch
+                    sys.stderr.write(f"Completed {c}/{nsearch}. {prc:.2f}%\n")
+    finally:
+        if output_file:
+            output_handle.close()
 
 if __name__ == "__main__":
     query_db = sys.argv[1]
